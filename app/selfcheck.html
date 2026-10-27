@@ -1,0 +1,205 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>同律 CONCORD · 现场自检（无需命令行）</title>
+<meta name="app-version" content="1.0.0">
+<meta name="description" content="《同律》CONCORD 现场自检页：在浏览器里直接复核毕氏音差、2^(1/12)、三分损益、Web Audio 实时合成、世界律制与术语库条数。零依赖、离线可用。">
+<meta name="theme-color" content="#0B0D10">
+<meta name="color-scheme" content="dark">
+<style>
+:root{--ink:#0B0D10;--panel:#14181D;--gold:#C8A35A;--cyan:#8FB0C4;--light:#F0ECE2;--dim:#A9B0B8;--ok:#4FA870;--bad:#D64545;--line:#2A2F36}
+*{box-sizing:border-box}
+html,body{margin:0;background:var(--ink);color:var(--light);font-family:"Microsoft YaHei","PingFang SC","Segoe UI",system-ui,sans-serif}
+.wrap{max-width:1080px;margin:0 auto;padding:44px 24px 72px}
+.kicker{color:var(--cyan);font-size:13px;letter-spacing:.06em}
+h1{font-size:30px;margin:10px 0 6px;color:var(--gold)}
+.sub{color:var(--dim);font-size:14px;line-height:1.7;margin:0 0 26px}
+.bar{height:3px;background:var(--gold);width:76px;margin:18px 0 26px}
+table{width:100%;border-collapse:collapse;font-size:14px}
+th,td{text-align:left;padding:11px 12px;border-bottom:1px solid var(--line);vertical-align:top}
+th{color:var(--dim);font-weight:600;font-size:12.5px;letter-spacing:.04em}
+td.num{font-variant-numeric:tabular-nums;color:var(--cyan)}
+.badge{display:inline-block;min-width:52px;text-align:center;padding:2px 8px;border-radius:999px;font-size:12px;font-weight:700}
+.badge.ok{background:rgba(79,168,112,.16);color:var(--ok);border:1px solid rgba(79,168,112,.5)}
+.badge.bad{background:rgba(214,69,69,.16);color:var(--bad);border:1px solid rgba(214,69,69,.5)}
+.badge.run{background:rgba(143,176,196,.14);color:var(--cyan);border:1px solid rgba(143,176,196,.45)}
+.sum{margin-top:26px;padding:18px 20px;border:1px solid var(--line);border-radius:12px;background:var(--panel)}
+.sum b{color:var(--gold);font-size:20px}
+.note{margin-top:18px;color:var(--dim);font-size:13px;line-height:1.8}
+code{background:#1b2026;padding:1px 6px;border-radius:5px;color:var(--cyan);font-size:12.5px}
+a{color:var(--cyan)}
+.btn{margin-top:20px;background:transparent;border:1px solid var(--gold);color:var(--gold);padding:9px 18px;border-radius:8px;font-size:14px;cursor:pointer}
+.btn:hover{background:rgba(200,163,90,.1)}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="kicker">2026 第十四届全国大学生数字媒体科技作品及创意竞赛 · 国际专项赛</div>
+  <h1>现场自检 · 不用命令行也能验</h1>
+  <p class="sub">
+    本页在浏览器里直接复算本作品的核心结论：毕氏音差、2^(1/12)、三分损益十二律的闭合差、Web Audio 实时合成的频率精度，
+    以及数据条数与内核数字是否一致。<strong>零依赖、离线可用</strong>——双击即可，不需要装任何东西。
+    全部结论同样可用命令行复跑（见作品 M8 方法与证据页）。
+  </p>
+  <div class="bar"></div>
+
+  <table id="tbl">
+    <thead><tr><th style="width:34%">检查项</th><th style="width:22%">期望</th><th style="width:22%">实测</th><th style="width:12%">判定</th><th style="width:10%">耗时</th></tr></thead>
+    <tbody id="tb"></tbody>
+  </table>
+
+  <div class="sum" id="sum">正在运行…</div>
+
+  <button class="btn" id="rerun" type="button">重新运行</button>
+
+  <p class="note">
+    数据来源：<code>data/data_tuning.js</code>、<code>data/data_glossary.js</code>、<code>data/metrics.js</code>（页面禁止手写数字）。
+    本页不采集任何信息、不发网络请求。
+    命令行复跑：<code>py -X utf8 _kernel/verify_kernel.py</code> 与 <code>node test/cross_check.js</code>。
+  </p>
+</div>
+
+<script src="data/data_tuning.js"></script>
+<script src="data/data_glossary.js"></script>
+<script src="data/metrics.js"></script>
+<script>
+(function () {
+  "use strict";
+  var TOL_CENTS = 0.01, results = [];
+
+  function el(id) { return document.getElementById(id); }
+  function fmt(x, d) { return Number(x).toFixed(d == null ? 6 : d); }
+
+  function row(name, expect, actual, pass, ms) {
+    var rec = { name: name, pass: pass, pending: pass === "pending" };
+    results.push(rec);
+    var tr = document.createElement("tr");
+    var cls = pass === "pending" ? "run" : (pass ? "ok" : "bad");
+    var txt = pass === "pending" ? "测量中" : (pass ? "PASS" : "FAIL");
+    tr.innerHTML = "<td>" + name + "</td><td class='num'>" + expect + "</td><td class='num'>" + actual +
+      "</td><td><span class='badge " + cls + "'>" + txt +
+      "</span></td><td class='num'>" + ms + " ms</td>";
+    el("tb").appendChild(tr);
+    tr._rec = rec;
+    return tr;
+  }
+
+  function run(name, expect, fn) {
+    var t0 = performance.now(), pass = false, actual = "—";
+    try {
+      var r = fn();
+      actual = r[0]; pass = r[1];
+    } catch (e) {
+      actual = "错误：" + (e && e.message ? e.message : e);
+    }
+    return row(name, expect, actual, pass, (performance.now() - t0).toFixed(1));
+  }
+
+  function cents(f1, f2) { return 1200 * Math.log2(f2 / f1); }
+
+  // 1. 毕氏音差（Pythagorean comma）
+  run("① 12 个纯五度 vs 7 个八度（毕氏音差）", "23.46 音分", function () {
+    var c = cents(1, Math.pow(3, 12) / Math.pow(2, 19));
+    return [fmt(c, 4) + " 音分", Math.abs(c - 23.46) < TOL_CENTS];
+  });
+
+  // 2. 2^(1/12)
+  run("② 新法密率 2^(1/12)，12 次方回到 2", "1.059463 / 2", function () {
+    var r = Math.pow(2, 1 / 12), back = Math.pow(r, 12);
+    return [fmt(r, 9) + " / " + fmt(back, 9), Math.abs(back - 2) < 1e-12];
+  });
+
+  // 3. 三分损益十二律：12 个五度折进一个八度后，第 13 音与起点差 = 毕氏音差
+  run("③ 三分损益（×3/2）折叠 12 次后的闭合差", "23.46 音分", function () {
+    var f = 1, i;
+    for (i = 0; i < 12; i++) { f *= 1.5; while (f > 2) { f /= 2; } }
+    var c = cents(1, f);
+    var d = Math.min(Math.abs(c), Math.abs(c - 1200));
+    return [fmt(d, 4) + " 音分", Math.abs(d - 23.46) < TOL_CENTS];
+  });
+
+  // 4. Web Audio 可用性
+  run("④ Web Audio 实时合成可用", "AudioContext", function () {
+    var C = window.AudioContext || window.webkitAudioContext;
+    return [C ? "可用" : "不可用", !!C];
+  });
+
+  // 5. 离线渲染频率精度（440 Hz，测零交叉）
+  var tr5 = run("⑤ 440 Hz 离线渲染频率精度", "偏差 < 1 音分", function () {
+    var C = window.OfflineAudioContext || window.webkitOfflineAudioContext;
+    if (!C) { return ["不支持 OfflineAudioContext", false]; }
+    var sr = 44100, dur = 0.5, ctx = new C(1, Math.round(sr * dur), sr);
+    var osc = ctx.createOscillator(), g = ctx.createGain();
+    osc.type = "sine"; osc.frequency.value = 440;
+    g.gain.value = 0.8; osc.connect(g); g.connect(ctx.destination); osc.start(0);
+    ctx.startRendering().then(function (buf) {
+      var d = buf.getChannelData(0), cross = [], i;
+      for (i = 1; i < d.length; i++) { if (d[i - 1] < 0 && d[i] >= 0) { cross.push(i); } }
+      var errCents = null;
+      if (cross.length > 4) {
+        var periods = cross.length - 1;
+        var freq = periods * sr / (cross[cross.length - 1] - cross[0]);
+        errCents = Math.abs(cents(440, freq));
+      }
+      var pass = errCents != null && errCents < 1;
+      tr5.children[2].textContent = errCents == null ? "无法测量" : fmt(errCents, 4) + " 音分";
+      tr5.children[3].innerHTML = "<span class='badge " + (pass ? "ok" : "bad") + "'>" + (pass ? "PASS" : "FAIL") + "</span>";
+      tr5._rec.pass = pass; tr5._rec.pending = false;
+      refreshSum();
+    }).catch(function (e) {
+      tr5.children[2].textContent = "渲染失败";
+      tr5.children[3].innerHTML = "<span class='badge bad'>FAIL</span>";
+      tr5._rec.pass = false; tr5._rec.pending = false;
+      refreshSum();
+    });
+    return ["异步渲染中…", "pending"];
+  });
+
+  // 6. 世界律制条数
+  run("⑥ 世界律制条数", "9 种 / 11 张表", function () {
+    var s = (window.TuningData && window.TuningData.summary) || {};
+    return [(s.tunings + " 种 / " + s.tables + " 张表"), s.tunings === 9 && s.tables === 11];
+  });
+
+  // 7. 术语库条数与门类
+  run("⑦ 术语库条数 / 门类", "177 条 / 10 类", function () {
+    var G = window.GlossaryData || {};
+    var n = (G.terms || []).length, c = (G.categories || []).length;
+    return [n + " 条 / " + c + " 类", n === 177 && c === 10];
+  });
+
+  // 8. 页面数字与数据摘要一致（内核常量 ↔ 本页算术；摘要 ↔ 数据文件）
+  run("⑧ 页面数字与数据摘要一致", "一致", function () {
+    var M = window.__metrics || {}, K = M.kernel || {}, E = M.evidence || {};
+    var G = window.GlossaryData || {};
+    var comma = 1200 * Math.log2(Math.pow(3, 12) / Math.pow(2, 19));
+    var kOk = K.pythagorean_comma_cents != null &&
+              Math.abs(K.pythagorean_comma_cents - comma) < 0.01;
+    var tOk = E.glossary_terms === (G.terms || []).length;
+    var cOk = E.glossary_cats === (G.categories || []).length;
+    return ["音差 " + (K.pythagorean_comma_cents != null ? Number(K.pythagorean_comma_cents).toFixed(2) : "—") +
+            " / 术语 " + E.glossary_terms + " / 门类 " + E.glossary_cats,
+            kOk && tOk && cOk];
+  });
+
+  function refreshSum() {
+    var pass = results.filter(function (r) { return r.pass === true; }).length;
+    var pend = results.filter(function (r) { return r.pending; }).length;
+    var total = results.length;
+    el("sum").innerHTML = "<b>" + pass + " / " + total + " 通过</b>" + (pend ? "（" + pend + " 项测量中）" : "") + "　" +
+      (pass === total ? "本页全部结论与文档一致。" : "有项目未通过，请把本页截图发给团队。") +
+      "<br><span class='note'>本页只做算术与接口复核，不替代命令行内核（747 条断言 / 1057 项交叉校验）。</span>";
+  }
+
+  el("rerun").addEventListener("click", function () {
+    el("tb").innerHTML = ""; results = []; el("sum").textContent = "正在运行…";
+    location.reload();
+  });
+
+  refreshSum();
+})();
+</script>
+</body>
+</html>
